@@ -1,0 +1,142 @@
+# -*- coding: utf-8 -*-
+"""
+一种服务，几个柜台能够让用户平均等待时间少于8min，此处是两个柜台时的模拟情况
+
+"""
+
+import numpy as np
+import heapq
+import matplotlib.pyplot as plt
+
+#############################################################
+
+class SimData:
+    
+    def __init__(self,time_arrive, event_type, serv_1_start, serv_1_end,serv_2_start, serv_2_end):
+        self.m_time_arrive = time_arrive
+        self.m_event_type = event_type
+        self.m_serv_1_start = serv_1_start
+        self.m_serv_1_end = serv_1_end
+        self.m_serv_2_start = serv_2_start
+        self.m_serv_2_end = serv_2_end
+        self.m_serv_1_end = serv_1_end
+        
+    def Print(self):
+        print(self.m_time_arrive," (", self.m_event_type,  ") : "
+              ", ",self.m_serv_1_start, " - ", self.m_serv_1_end,
+              ", ",self.m_serv_2_start, " - ", self.m_serv_2_end)
+
+
+#############################################################
+
+T = 20000 # simulation time
+
+ell = []
+
+priorityQueue = [] 
+Queue1 = []
+Queue2 = []
+
+mu1 = 1
+mu2 = 2
+lmbda = 2.5
+
+t_current = 0
+
+# create first arrival
+t_current = np.random.exponential(lmbda)  
+data = SimData(t_current,"ARRIVAL",-1,-1,-1,-1)
+a=heapq.heappush(priorityQueue,(t_current,data))
+
+time_arr = []
+ellq1_len = []
+ellq2_len = []
+
+serv1busy = 0
+serv2busy = 0
+
+# main loop
+while(t_current<T):
+    obj = heapq.heappop(priorityQueue)
+    t_current = obj[0]
+    event = obj[1]
+    
+    # record queues length
+    time_arr.append(t_current)
+    ellq1_len.append(len(Queue1))
+    ellq2_len.append(len(Queue2))
+    
+    if(event.m_event_type == "ARRIVAL"):
+        # handle arrival
+        # schedule the next arrival
+        t_next = t_current + np.random.exponential(lmbda)  
+        data = SimData(t_next,"ARRIVAL",-1,-1,-1,-1)
+        heapq.heappush(priorityQueue,(t_next,data))
+        
+        if(serv1busy==0):
+            serv1busy = 1
+            event.m_serv_1_start = t_current
+            event.m_serv_1_end = t_current + np.random.exponential(mu1)
+            event.m_event_type = "DEPARTURE_SERV1"
+            heapq.heappush(priorityQueue,(event.m_serv_1_end,event))            
+        else:
+            Queue1.append(event)
+        
+        continue
+    if(event.m_event_type == "DEPARTURE_SERV1"):
+         serv1busy = 0
+          # handle departure from the first queue
+         if(serv2busy==0):
+            serv2busy = 1
+            event.m_serv_2_start = t_current
+            event.m_event_type = "DEPARTURE_SERV2"
+            event.m_serv_2_end = t_current + np.random.exponential(mu2)
+            heapq.heappush(priorityQueue,(event.m_serv_2_end,event))
+         else:
+            Queue2.append(event)
+            
+         if(len(Queue1)!=0):
+            obj_wait_inq1 = Queue1.pop(0)
+            obj_wait_inq1.m_serv_1_start = t_current
+            obj_wait_inq1.m_event_type = "DEPARTURE_SERV1"
+            obj_wait_inq1.m_serv_1_end = t_current + np.random.exponential(mu1)
+            heapq.heappush(priorityQueue,(obj_wait_inq1.m_serv_1_end,obj_wait_inq1))
+            serv1busy = 1
+        
+         continue
+    
+    if(event.m_event_type == "DEPARTURE_SERV2"):
+        # handle departure from the second queue
+        ell.append(event)
+        serv2busy = 0
+        if(len(Queue2)!=0):
+            serv2busy = 1
+            obj_wait_inq2 = Queue2.pop(0)
+            obj_wait_inq2.m_serv_2_start = t_current
+            obj_wait_inq2.m_event_type = "DEPARTURE_SERV2"
+            obj_wait_inq2.m_serv_2_end = t_current + np.random.exponential(mu2)
+            heapq.heappush(priorityQueue,(obj_wait_inq2.m_serv_2_end,obj_wait_inq2))
+        continue
+####################################################################################
+#for event in ell:
+#    event.Print()
+
+####################################################################################
+# Calculate the average waiting time in the system
+####################################################################################
+
+ell_w_time = np.zeros(len(ell)-1000)
+
+for i in range(0,len(ell)-1000):
+    event = ell[i+1000]
+    wait_t = event.m_serv_2_end - event.m_time_arrive
+    ell_w_time[i] = wait_t
+
+tmean = np.mean(ell_w_time)
+tstd = np.std(ell_w_time)/np.sqrt(len(ell))
+
+print("95% CI for total time in the system (", tmean - 1.96*tstd, " , ", tmean + 1.96*tstd, ")")
+
+plt.plot(time_arr,ellq1_len, label="Q1")
+plt.plot(time_arr,ellq2_len,label="Q2")
+plt.legend()
